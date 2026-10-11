@@ -11,14 +11,15 @@ import rudra_brain
 app = Flask(__name__, static_folder="static")
 
 # ==========================================
-# CUSTOMIZABLE VARIABLES (ज़रूरत के हिसाब से बदलें)
+# CUSTOMIZABLE VARIABLES (Zaroorat ke hisaab se badlein)
 # ==========================================
 DEFAULT_COOKIE = "Csrftoken=zG1pH59sADOl0KudEa71Or3erDvWo4Zz;ds_user_id=48375386992;datr=3Za0akqrdNzsMt2Wq-4HHzH3;ig_did=5BBC5B81-47AE-4876-B15E-1F2B93DB6322;ps_l=1;ps_n=1;mid=arSW5AABAAGaENQikZ0PQFe6q_Td;dpr=2.294114351272583;sessionid=48375386992%3AaALzZvrk15BrFx%3A17%3AAYmTItDHyZFUMjTh5zbWya-7nFsLaVOLAflYdtc_rQ;wd=471x555"
+DEFAULT_API_KEY = "AQ.Ab8RN6IZCtdI7eCdR7_J7r19EHFeKMhx5Z6aW1lipfJHRGluxQ"
 
 IG_SESSIONID = os.environ.get("IG_SESSIONID", DEFAULT_COOKIE)
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", DEFAULT_API_KEY)
 OWNER_IG_ID = os.environ.get("OWNER_IG_ID", "alone.shayar.420")
-CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", 12))
+CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", 10))
 SESSION_FILE = "session.json"
 
 status_data = {
@@ -26,9 +27,10 @@ status_data = {
     "developer": rudra_brain.DEVELOPER_NAME,
     "owner_id": OWNER_IG_ID,
     "logged_in": False,
-    "ai_active": bool(GEMINI_API_KEY),
+    "ai_active": True,
     "account_user": "Not Connected",
-    "last_checked": "Starting Loop...",
+    "last_checked": "Starting...",
+    "last_emotion": "WhatsApp Friend Mode 😎",
     "replies_sent": 0,
     "error_msg": ""
 }
@@ -59,11 +61,10 @@ def login_with_session_id(raw_session_id=None):
     clean_sid = cookies.get("sessionid", "")
 
     if not clean_sid:
-        status_data["error_msg"] = "Please नीचे बॉक्स में Session ID डालें!"
+        status_data["error_msg"] = "Please Session ID dalein!"
         status_data["logged_in"] = False
         return None
 
-    # Method 1: login_by_sessionid
     try:
         cl.login_by_sessionid(clean_sid)
         cl.dump_settings(SESSION_FILE)
@@ -75,7 +76,6 @@ def login_with_session_id(raw_session_id=None):
     except Exception:
         pass
 
-    # Method 2: Cookie Injection
     try:
         user_id = cookies.get("ds_user_id") or clean_sid.split(":")[0]
         csrf = cookies.get("csrftoken", "")
@@ -100,7 +100,6 @@ def login_with_session_id(raw_session_id=None):
         return None
 
 def rudra_listener():
-    """यह लूप कभी बंद नहीं होगा और हर 12 सेकंड में मैसेज चेक करेगा।"""
     global cl_client
     if not cl_client or not status_data["logged_in"]:
         login_with_session_id()
@@ -145,21 +144,24 @@ def rudra_listener():
 
                 is_group = len(thread.users) > 1
                 reply = None
+                emotion = "1hr_roast"
 
-                # 1. 1-Hour Group Return Rule
+                # 1. Check 1-Hour Group Return Rule
                 if is_group:
                     reply = rudra_brain.check_1hr_group_return(thread.id, sender)
 
-                # 2. Fresh Emotional AI Reply
+                # 2. Generate Vibe-Mimic Short Reply
                 if not reply:
                     rudra_brain.OWNER_IG_ID = status_data["owner_id"]
-                    reply = rudra_brain.generate_rudra_reply(sender, msg.text, GEMINI_API_KEY)
+                    reply, emotion = rudra_brain.generate_rudra_reply(sender, msg.text, GEMINI_API_KEY)
 
-                time.sleep(random.uniform(1.5, 3.5))
+                status_data["last_emotion"] = emotion.upper()
+
+                time.sleep(random.uniform(1.5, 3.0))
                 cl_client.direct_send(reply, thread_ids=[thread.id])
                 status_data["replies_sent"] += 1
                 status_data["error_msg"] = ""
-                print(f"[Rudra -> @{sender}]: {reply}")
+                print(f"[Rudra ({emotion}) -> @{sender}]: {reply}")
 
         except Exception as e:
             status_data["error_msg"] = f"Loop Notice: {e}"
@@ -167,7 +169,6 @@ def rudra_listener():
         time.sleep(CHECK_INTERVAL)
 
 def ensure_listener_running():
-    """सुनिश्चित करता है कि बैकग्राउंड थ्रेड हमेशा चालू रहे।"""
     global listener_thread
     if listener_thread is None or not listener_thread.is_alive():
         listener_thread = threading.Thread(target=rudra_listener, daemon=True)
@@ -188,7 +189,7 @@ def dashboard():
             rudra_brain.OWNER_IG_ID = new_owner
         if new_ai_key:
             GEMINI_API_KEY = new_ai_key
-            status_data["ai_active"] = True
+            rudra_brain.GEMINI_API_KEY = new_ai_key
         if new_sid:
             login_with_session_id(new_sid)
 
@@ -219,14 +220,14 @@ def dashboard():
             <p class="dev">👑 Developer: {{ s.developer }} (@{{ s.owner_id }}) 👑</p>
             <hr style="border-color:#333;">
             <p>Session Login: <b style="color:{{ '#00ff88' if s.logged_in else '#ff4444' }};">{{ s.logged_in }}</b> ({{ s.account_user }})</p>
-            <p>Fresh AI Brain Active: <b style="color:{{ '#00ff88' if s.ai_active else '#ff4444' }};">{{ s.ai_active }}</b></p>
+            <p>Current Vibe Mode: <b style="color:#ff0055;">{{ s.last_emotion }}</b></p>
             <p>Last Checked: <b>{{ s.last_checked }}</b> | Replies Sent: <b>{{ s.replies_sent }}</b></p>
             {% if s.error_msg %}<p class="err">⚠️ {{ s.error_msg }}</p>{% endif %}
             <hr style="border-color:#333;">
             <form method="POST">
                 <input type="text" name="owner_id" placeholder="Owner Insta Username" value="{{ s.owner_id }}">
-                <input type="text" name="gemini_key" placeholder="Paste Gemini API Key (For 100% New Replies)">
-                <input type="text" name="sessionid" placeholder="Paste Instagram Session ID here...">
+                <input type="text" name="gemini_key" placeholder="Update Gemini API Key (Optional)">
+                <input type="text" name="sessionid" placeholder="Update Instagram Session ID (Optional)">
                 <br>
                 <button type="submit">Save & Start Rudra 🚀</button>
             </form>
